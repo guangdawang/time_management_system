@@ -1,4 +1,3 @@
-# [file name]: gui_main.py
 import PySimpleGUI as sg
 import sys
 import os
@@ -16,6 +15,16 @@ class TimeManagementGUI:
         self.current_user = None
         self.current_session = None
         self.task_manager = None
+        
+    def safe_update(self, window, key, value):
+        """安全更新窗口元素，避免 None 引用错误"""
+        if window and not window.was_closed():
+            try:
+                window[key].update(value)
+                return True
+            except Exception:
+                pass
+        return False
         
     def login_window(self):
         """登录窗口"""
@@ -41,7 +50,7 @@ class TimeManagementGUI:
                 password = values['-PASSWORD-']
                 
                 if not username or not password:
-                    window['-LOGIN-MSG-'].update('用户名和密码不能为空')
+                    self.safe_update(window, '-LOGIN-MSG-', '用户名和密码不能为空')
                     continue
                     
                 result = self.user_manager.login(username, password)
@@ -52,7 +61,7 @@ class TimeManagementGUI:
                     window.close()
                     return True
                 else:
-                    window['-LOGIN-MSG-'].update('登录失败！用户名或密码错误')
+                    self.safe_update(window, '-LOGIN-MSG-', '登录失败！用户名或密码错误')
                     
             elif event == '注册':
                 window.close()
@@ -87,27 +96,27 @@ class TimeManagementGUI:
                 confirm = values['-CONFIRM-']
                 
                 if not username or not password:
-                    window['-REGISTER-MSG-'].update('用户名和密码不能为空')
+                    self.safe_update(window, '-REGISTER-MSG-', '用户名和密码不能为空')
                     continue
                     
                 if len(username) < 3:
-                    window['-REGISTER-MSG-'].update('用户名至少3个字符')
+                    self.safe_update(window, '-REGISTER-MSG-', '用户名至少3个字符')
                     continue
                     
                 if len(password) < 6:
-                    window['-REGISTER-MSG-'].update('密码至少6个字符')
+                    self.safe_update(window, '-REGISTER-MSG-', '密码至少6个字符')
                     continue
                     
                 if password != confirm:
-                    window['-REGISTER-MSG-'].update('两次输入的密码不一致')
+                    self.safe_update(window, '-REGISTER-MSG-', '两次输入的密码不一致')
                     continue
                     
                 if self.user_manager.register(username, password):
-                    window['-REGISTER-MSG-'].update('注册成功！请登录', text_color='green')
+                    self.safe_update(window, '-REGISTER-MSG-', '注册成功！请登录')
                     window.close()
                     return True
                 else:
-                    window['-REGISTER-MSG-'].update('注册失败！用户名已存在')
+                    self.safe_update(window, '-REGISTER-MSG-', '注册失败！用户名已存在')
                     
         return False
     
@@ -126,7 +135,7 @@ class TimeManagementGUI:
         
         layout = [
             [sg.Menu(menu_def)],
-            [sg.Text(f'欢迎, {self.current_user.username}', font=('Arial', 14))],
+            [sg.Text(f'欢迎, {self.current_user.username if self.current_user else "未知用户"}', font=('Arial', 14))],
             [sg.Table(values=[], headings=headers, 
                      auto_size_columns=False,
                      justification='left',
@@ -156,7 +165,7 @@ class TimeManagementGUI:
                     
             elif event in ('编辑任务', '任务::编辑任务'):
                 selected_tasks = values['-TASK-TABLE-']
-                if selected_tasks:
+                if selected_tasks and self.task_manager:
                     task_index = selected_tasks[0]
                     tasks = self.task_manager.list_tasks()
                     if 0 <= task_index < len(tasks):
@@ -167,7 +176,7 @@ class TimeManagementGUI:
                     
             elif event in ('标记状态', '任务::标记状态'):
                 selected_tasks = values['-TASK-TABLE-']
-                if selected_tasks:
+                if selected_tasks and self.task_manager:
                     task_index = selected_tasks[0]
                     tasks = self.task_manager.list_tasks()
                     if 0 <= task_index < len(tasks):
@@ -178,7 +187,7 @@ class TimeManagementGUI:
                     
             elif event in ('删除任务', '任务::删除任务'):
                 selected_tasks = values['-TASK-TABLE-']
-                if selected_tasks:
+                if selected_tasks and self.task_manager:
                     task_index = selected_tasks[0]
                     tasks = self.task_manager.list_tasks()
                     if 0 <= task_index < len(tasks):
@@ -196,16 +205,19 @@ class TimeManagementGUI:
                 self.refresh_task_table(window)
                 
             elif event in ('待办任务', '查看::待办任务'):
-                tasks = self.task_manager.list_tasks(status='todo')
-                self.update_task_table(window, tasks)
+                if self.task_manager:
+                    tasks = self.task_manager.list_tasks(status='todo')
+                    self.update_task_table(window, tasks)
                 
             elif event in ('进行中', '查看::进行中'):
-                tasks = self.task_manager.list_tasks(status='in_progress')
-                self.update_task_table(window, tasks)
+                if self.task_manager:
+                    tasks = self.task_manager.list_tasks(status='in_progress')
+                    self.update_task_table(window, tasks)
                 
             elif event in ('已完成', '查看::已完成'):
-                tasks = self.task_manager.list_tasks(status='done')
-                self.update_task_table(window, tasks)
+                if self.task_manager:
+                    tasks = self.task_manager.list_tasks(status='done')
+                    self.update_task_table(window, tasks)
                 
             elif event in ('统计', '统计::任务统计'):
                 self.show_statistics_window()
@@ -214,12 +226,14 @@ class TimeManagementGUI:
                 sg.popup('时间管理系统 v1.0\n\n一个功能完整的时间管理工具\n支持任务管理和时间追踪')
                 
         window.close()
-        self.user_manager.logout(self.current_session)
+        if self.current_session:
+            self.user_manager.logout(self.current_session)
         
     def refresh_task_table(self, window):
         """刷新任务表格"""
-        tasks = self.task_manager.list_tasks()
-        self.update_task_table(window, tasks)
+        if self.task_manager:
+            tasks = self.task_manager.list_tasks()
+            self.update_task_table(window, tasks)
         
     def update_task_table(self, window, tasks):
         """更新任务表格数据"""
@@ -248,7 +262,7 @@ class TimeManagementGUI:
                 f"{task.estimated_hours}h"
             ])
             
-        window['-TASK-TABLE-'].update(values=table_data)
+        self.safe_update(window, '-TASK-TABLE-', table_data)
         
     def add_task_window(self):
         """添加任务窗口"""
@@ -278,7 +292,7 @@ class TimeManagementGUI:
             elif event == '保存':
                 title = values['-TITLE-'].strip()
                 if not title:
-                    window['-MSG-'].update('标题不能为空')
+                    self.safe_update(window, '-MSG-', '标题不能为空')
                     continue
                     
                 # 转换优先级
@@ -305,13 +319,13 @@ class TimeManagementGUI:
                     'tags': tags
                 }
                 
-                task = self.task_manager.create_task(**task_data)
+                task = self.task_manager.create_task(**task_data) if self.task_manager else None
                 if task:
                     sg.popup(f'任务 "{task.title}" 创建成功!')
                     result = True
                     break
                 else:
-                    window['-MSG-'].update('创建任务失败')
+                    self.safe_update(window, '-MSG-', '创建任务失败')
                     
         window.close()
         return result
@@ -352,7 +366,7 @@ class TimeManagementGUI:
             elif event == '保存':
                 title = values['-TITLE-'].strip()
                 if not title:
-                    window['-MSG-'].update('标题不能为空')
+                    self.safe_update(window, '-MSG-', '标题不能为空')
                     continue
                     
                 # 转换状态和优先级
@@ -383,12 +397,12 @@ class TimeManagementGUI:
                     'tags': tags
                 }
                 
-                if self.task_manager.update_task(task.task_id, **update_data):
+                if self.task_manager and self.task_manager.update_task(task.task_id, **update_data):
                     sg.popup('任务更新成功!')
                     result = True
                     break
                 else:
-                    window['-MSG-'].update('更新任务失败')
+                    self.safe_update(window, '-MSG-', '更新任务失败')
                     
         window.close()
         return result
@@ -425,7 +439,7 @@ class TimeManagementGUI:
                 else:
                     status = task.status
                     
-                if self.task_manager.update_task(task.task_id, status=status):
+                if self.task_manager and self.task_manager.update_task(task.task_id, status=status):
                     sg.popup('状态更新成功!')
                     result = True
                     break
@@ -437,7 +451,15 @@ class TimeManagementGUI:
         
     def show_statistics_window(self):
         """显示统计窗口"""
-        stats = self.task_manager.get_task_statistics()
+        stats = self.task_manager.get_task_statistics() if self.task_manager else {
+            "total_tasks": 0, 
+            "completed_tasks": 0, 
+            "in_progress_tasks": 0, 
+            "todo_tasks": 0, 
+            "completion_rate": 0.0, 
+            "total_estimated_hours": 0.0, 
+            "total_actual_hours": 0.0
+        }
         
         layout = [
             [sg.Text('任务统计', font=('Arial', 16))],
